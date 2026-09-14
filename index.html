@@ -114,6 +114,7 @@ const H = [
  {k:'towerLegs', n:'Пивная башня, число ножек',  v:3,    src:'said', int:true},
  {k:'taps',      n:'Кранов на башне',            v:24,   src:'said', int:true},
  {k:'tapSide',   n:'Краны с внутренней стороны', v:1,    src:'said', flag:true},
+ {k:'islandK',   n:'Остров: × роста человека',   v:1.5,  src:'said', mult:true},
  {k:'towerOn',   n:'Башня стоит на стойке',      v:1,    src:'said', flag:true},
 
  {k:'bar',      n:'Г-стойка',                    v:1100, src:'open'},
@@ -135,6 +136,7 @@ const H = [
  {k:'till',     n:'Касса',                       v:300,  src:'open'},
  {k:'coldroom', n:'Колдрум',                     v:2200, src:'open'},
  {k:'column',   n:'Колонна',                     v:5520, src:'open'},
+ {k:'human',    n:'Рост человека',               v:1750, src:'open'},
  {k:'shelf',    n:'Полки острова, шаг',          v:420,  src:'open'},
  {k:'fence',    n:'Заборчик',                    v:1000, src:'open'},
  {k:'wc',       n:'Унитаз',                      v:400,  src:'open'},
@@ -168,7 +170,7 @@ world.position.set(-RW*S/2, 0, -RD*S/2);
 scene.add(world);
 const G = {};
 ['zones','walls','glass','counters','tower','cases','seats','tables','island',
- 'coldroom','fence','embeds','paths','ceiling'].forEach(k => {
+ 'coldroom','fence','embeds','paths','ceiling','human'].forEach(k => {
   G[k] = new THREE.Group(); world.add(G[k]);
 });
 
@@ -336,11 +338,12 @@ function build(){
   box(G.cases, C[1], C[2], C[3], C[4], 0, hv.column, 0xb9c4bd, 'column', C[0]);
   box(G.cases, C[1]-30, C[2]-30, C[3]+60, C[4]+60, 0, 160, 0xa6b3ab, 'column', null);
 
-  /* --- остров до потолка: боковины, полки, стойки --- */
-  const I = MODEL.island, iH = ceilOf(I[1] + I[3]/2);
-  box(G.island, I[1], I[2], 60, I[4], 0, iH, 0xb99a62, 'h5520', I[0]);
-  box(G.island, I[1]+I[3]-60, I[2], 60, I[4], 0, iH, 0xb99a62, 'h5520', null);
-  box(G.island, I[1], I[2], I[3], I[4], 0, 140, 0x9c7f4c, 'h5520', null);
+  /* --- остров: высота ограничена ростом человека, а не потолком --- */
+  const I = MODEL.island, iH = Math.max(hv.human * hv.islandK, 300);
+  box(G.island, I[1], I[2], 60, I[4], 0, iH, 0xb99a62, 'human', I[0]);
+  box(G.island, I[1]+I[3]-60, I[2], 60, I[4], 0, iH, 0xb99a62, 'human', null);
+  box(G.island, I[1], I[2], I[3], I[4], 0, 140, 0x9c7f4c, 'human', null);
+  box(G.island, I[1]-20, I[2]-20, I[3]+40, I[4]+40, iH, 45, 0xa8813f, 'human', null);
   const sh = Math.max(180, hv.shelf);
   for (let z = 140 + sh; z < iH - 80; z += sh)
     box(G.island, I[1]+60, I[2]+30, I[3]-120, I[4]-60, z, 30, 0xcbb182, 'shelf', null);
@@ -425,7 +428,25 @@ function build(){
     G.ceiling.add(p);
   });
 
+  /* --- фигура для масштаба, рядом с островом --- */
+  figure(4350, 5957);
+
   applyProvenance();
+}
+
+/* --- человек: нужен, чтобы «полтора роста» можно было увидеть глазом --- */
+function figure(cx, cy){
+  const Hh = hv.human, c = 0x6f7f76;
+  cyl(G.human, cx-95, cy, 130, 0, Hh*0.46, c, 'human', null, 12);
+  cyl(G.human, cx+95, cy, 130, 0, Hh*0.46, c, 'human', null, 12);
+  cyl(G.human, cx, cy, 360, Hh*0.46, Hh*0.30, c, 'human', null, 16);
+  cyl(G.human, cx-215, cy, 95, Hh*0.50, Hh*0.26, c, 'human', null, 10);
+  cyl(G.human, cx+215, cy, 95, Hh*0.50, Hh*0.26, c, 'human', null, 10);
+  cyl(G.human, cx, cy, 130, Hh*0.76, Hh*0.06, c, 'human', null, 12);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(105*S, 16, 12), lam(c));
+  head.position.set(cx*S, Hh*0.905*S, cy*S);
+  head.userData = {key:'human', label:'Рост ' + Math.round(Hh) + ' мм', top:Hh};
+  G.human.add(head); tracked.push(head); labels.push(head);
 }
 
 /* --- пивной кран: излив, корпус, ручка --- */
@@ -499,6 +520,11 @@ ledger.innerHTML = `
    <div class="sect"><h2>С чертежа</h2><p>Заблокировано.</p></div><div id="rPlan"></div>
    <div class="sect"><h2>С ваших слов</h2><p>Пивная башня: сказано в переписке, на плане этого нет.</p></div><div id="rSaid"></div>
    <div class="sect"><h2>Задаёте вы</h2><p>Пока не тронуты — контур оранжевый.</p></div><div id="rOpen"></div>
+   <div class="warn">
+     <b>Остров ниже, чем на чертеже.</b> Там он подписан «ОСТРОВ ДО ПОТОЛКА»,
+     то есть 5520 мм. По вашему указанию он ограничен полутора ростами человека.
+     Поменяете рост — остров пересчитается.
+   </div>
    <div class="warn" style="border-color:#7e9186;background:rgba(137,169,150,.08);color:#a9b6ad">
      Что я решил сам, потому что чертёж молчит: ступень потолка 5520 → 3100
      проведена по перегородке x = 9996; подпись пожарных шкафов
@@ -513,9 +539,9 @@ function rowFor(h){
   const cls = h.src === 'plan' ? 'known' : (h.src === 'said' ? 'said' : 'open');
   r.className = 'row' + (h.src === 'open' ? ' open' : (h.src === 'said' ? ' said' : ''));
   r.innerHTML = `<span class="mark ${cls}"></span><span class="nm">${h.n}</span>
-    <span class="val"><input type="number" step="${h.int ? 1 : 10}" min="0" max="8000"
+    <span class="val"><input type="number" step="${h.mult ? 0.1 : (h.int ? 1 : 10)}" min="0" max="8000"
       value="${h.v}" ${h.src === 'plan' || h.flag ? 'disabled' : ''}
-      aria-label="${h.n}"><span class="u">${h.int ? 'шт' : (h.flag ? 'да' : 'мм')}</span></span>`;
+      aria-label="${h.n}"><span class="u">${h.mult ? '×' : (h.int ? 'шт' : (h.flag ? 'да' : 'мм'))}</span></span>`;
   const inp = r.querySelector('input');
   inp.addEventListener('input', () => {
     const n = parseFloat(inp.value);
@@ -531,9 +557,10 @@ H.forEach(h => document.getElementById(
 
 /* ===== слои и виды ===== */
 const VIS = {walls:true, ceiling:false, zones:true, paths:true,
-             seats:true, fence:true, embeds:true, labels:false};
+             seats:true, fence:true, embeds:true, human:true, labels:false};
 [['walls','Стены'],['ceiling','Потолок'],['zones','Зоны'],['paths','Пути'],
- ['seats','Места'],['fence','Заборчик'],['embeds','Закладные'],['labels','Подписи']]
+ ['seats','Места'],['fence','Заборчик'],['embeds','Закладные'],
+ ['human','Человек'],['labels','Подписи']]
 .forEach(([k, lbl]) => {
   const b = document.createElement('button');
   b.textContent = lbl; b.className = VIS[k] ? 'on' : '';
@@ -563,6 +590,7 @@ function applyVis(){
   G.seats.visible = VIS.seats;
   G.fence.visible = VIS.fence;
   G.embeds.visible = VIS.embeds;
+  G.human.visible = VIS.human;
   document.getElementById('tags').style.display = VIS.labels ? 'block' : 'none';
 }
 const tg = document.getElementById('toggle');
