@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>БАР 05 — объём v18</title>
+<style>
+:root{
+  --ink:#22302c; --ink-2:#2c3b36; --ink-3:#3b4a44;
+  --paper:#e6e8e5; --sage:#89a996; --sage-pale:#c6d3ca;
+  --wood:#c3995d; --flag:#e8a23c; --red:#c0563f; --sky:#5aa6e0;
+  --line:rgba(198,211,202,.20);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--ink);
+  font-family:Helvetica,Arial,"Helvetica Neue",sans-serif;
+  font-variant-numeric:tabular-nums;color:var(--paper);}
+#stage{position:fixed;inset:0}
+canvas{display:block;touch-action:none}
+
+/* ---------- ledger ---------- */
+#ledger{
+  position:fixed;left:0;top:0;bottom:0;width:318px;z-index:20;
+  background:var(--ink);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;transition:transform .22s ease;
+  transform:translateX(-100%);
+}
+body.open #ledger{transform:none}
+.head{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+.head h1{font-size:14px;font-weight:700;letter-spacing:.2px;line-height:1.3}
+.head .sub{margin-top:5px;font-size:11px;line-height:1.5;color:var(--sage)}
+.scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding-bottom:28px}
+.sect{padding:14px 16px 4px}
+.sect h2{font-size:11px;font-weight:700;color:var(--sage-pale);margin-bottom:3px}
+.sect p{font-size:10.5px;line-height:1.55;color:#7e9186}
+
+.row{display:flex;align-items:center;gap:9px;padding:7px 16px;border-bottom:1px solid rgba(198,211,202,.07)}
+.mark{width:9px;height:9px;flex:none;border-radius:1px}
+.mark.known{background:var(--sage)}
+.mark.open{border:1.5px solid var(--flag);background:transparent}
+.mark.set{background:var(--flag)}
+.mark.said{background:var(--sky)}
+.row.said .nm{color:#cfe0ee}
+.nm{flex:1;font-size:11.5px;line-height:1.35;color:#d7ded8}
+.row.open .nm{color:#a9b6ad}
+.val{position:relative;flex:none}
+.val input{width:70px;padding:5px 20px 5px 7px;font:inherit;font-size:11.5px;
+  font-variant-numeric:tabular-nums;text-align:right;color:var(--paper);
+  background:rgba(198,211,202,.07);border:1px solid rgba(198,211,202,.16);border-radius:2px;}
+.val input:focus{outline:none;border-color:var(--flag);background:rgba(232,162,60,.12)}
+.val input:disabled{color:var(--sage);background:transparent;border-color:transparent;padding-right:20px}
+.val .u{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  font-size:9.5px;color:#6d8176;pointer-events:none}
+
+.ctrls{padding:12px 16px 4px;display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;font-size:11px;color:#cfd8d1;cursor:pointer;
+  padding:6px 10px;border-radius:2px;background:rgba(198,211,202,.07);
+  border:1px solid rgba(198,211,202,.16);transition:background .12s,border-color .12s}
+button:hover{background:rgba(198,211,202,.14)}
+button.on{background:rgba(137,169,150,.26);border-color:var(--sage);color:#eaefe9}
+button:focus-visible{outline:2px solid var(--flag);outline-offset:1px}
+a.dl{display:inline-block;font:inherit;font-size:11px;text-decoration:none;
+  color:#22302c;background:var(--sage);border:1px solid var(--sage);
+  padding:6px 10px;border-radius:2px;font-weight:700}
+a.dl:hover{background:#9dbaa6}
+a.dl:focus-visible{outline:2px solid var(--flag);outline-offset:1px}
+
+.warn{margin:12px 16px;padding:10px 11px;border-left:2px solid var(--flag);
+  background:rgba(232,162,60,.09);font-size:10.5px;line-height:1.6;color:#d9c9ac}
+.warn b{color:var(--flag);font-weight:700}
+
+/* ---------- overlay chrome ---------- */
+#toggle{position:fixed;left:0;top:14px;z-index:30;transition:left .22s ease;
+  border-radius:0 3px 3px 0;border-left:none;padding:9px 10px;background:var(--ink-2)}
+body.open #toggle{left:318px}
+#hud{position:fixed;right:14px;bottom:14px;z-index:20;text-align:right;
+  font-size:10.5px;line-height:1.7;color:#6d8176;pointer-events:none}
+#hud b{color:var(--sage-pale);font-weight:400}
+#tags{position:fixed;inset:0;z-index:10;pointer-events:none;overflow:hidden}
+.tag{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;
+  font-size:9.5px;letter-spacing:.2px;color:#22302c;background:rgba(230,232,229,.82);
+  padding:1.5px 4px;border-radius:2px}
+.tag.seat{background:rgba(137,169,150,.9);color:#16221e;font-weight:700}
+#load{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  background:var(--ink);font-size:12px;color:var(--sage)}
+
+@media (max-width:760px){
+  #ledger{width:min(300px,86vw)}
+  body.open #toggle{left:min(300px,86vw)}
+  #hud{display:none}
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="tags"></div>
+<button id="toggle" aria-label="Показать или скрыть панель высот">☰</button>
+<div id="hud"></div>
+<div id="load">Сборка объёма…</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const MODEL={"room":{"w":13581,"d":8778},"walls":[["Стена верхняя",0,0,13581,575,0],["Пилон верх 1",202,0,1050,675,0],["Пилон верх 2",6822,0,1580,675,0],["Пилон верх 3",10002,0,1200,675,0],["Стена правая",13032,0,549,8778,0],["Стена нижняя",0,7950,10195,828,0],["Стена нижняя уступ 1",10195,8150,1395,628,0],["Стена нижняя уступ 2",11590,8350,1442,428,0],["Стена левая глухая 1",0,3175,729,1800,0],["Стена левая глухая 2",0,7095,729,855,0],["Перегородка 1",9996,575,200,788,1],["Перегородка 2",9996,2362,200,1146,1],["Санузел: стена северная",10125,3892,2907,114,1],["Санузел: стена западная",10125,4006,413,1012,1],["Холл: стена северная 1",10538,4897,562,121,1],["Холл: стена северная 2",12100,4897,932,121,1],["Холл: стена восточная",12111,5018,122,1266,1],["Перегородка нижняя",9996,6284,3036,114,1]],"window":{"x":0,"y":575,"w":170,"d":2600,"sash_x":120},"door":{"x":0,"y":5095,"w":120,"d":1880},"zones":[["Зона персонала",3614,4665,5105,3285,"#dcecf4"],["Зона персонала 2",8719,6280,1277,1670,"#dcecf4"],["Санузел",10540,4006,2492,891,"#eaf1f3"],["Холл",10115,5018,1996,1266,"#e3e9e4"]],"counters":[["Г-стойка, плечо A · 3852×800",2814,3865,3852,800,"bar"],["Г-стойка, плечо Б · 800×4085",2814,3865,800,4085,"bar"],["Стойка у окна · 800×3130",100,130,800,3130,"winbar"]],"tower":{"name":"Пивная башня · Г-образная, 1700 + 1700 × 200","arms":[[3414,4465,1700,200],[3414,4465,200,1700]],"legs":[[3514,4565],[5014,4565],[3514,6065]]},"onCounter":[["Касса · 600×450",5680,4215,600,450,"#506e90","till"]],"cases":[["Холодильник · 1610×750",6666,3115,1610,750,"#91b1c6","fridge","case"],["Морозилка · 2000×700",3614,7250,2000,700,"#80adc0","freezer","chest"],["Столешница рабочая · 2005×700",5614,7250,2005,700,"#d5c396","worktop","counter"],["Печь · 300×600",7619,7250,300,600,"#6a778a","oven","oven"],["Раковина бара · 800×700",7919,7250,800,700,"#86c3be","worktop","sink"],["Раковина санузла · 500×400",10600,4006,500,400,"#86c3be","wcsink","sink"],["Унитаз · 700×400",12332,4250,700,400,"#eef3f7","wc","wc"]],"column":["Колонна · 1610×910",6666,3865,1610,910],"island":["Остров до потолка · 3200×700 · бокалы, бутылки",4600,5607,3200,700],"coldroom":["Колдрум · 2600×1450",10323,6390,2600,1450],"tables":[["Стол 1 · 700×700",2780,575,700,700],["Стол 2 · 700×700",5202,575,700,700],["Стол 3 · 700×700",8024,675,700,700]],"round_table":{"name":"Стол 4 · Ø1100 · 6 мест","cx":11598,"cy":2316,"d":1100},"seats":[{"code":"О1","x":1275.0,"y":1175.1},{"code":"О2","x":1275.0,"y":1924.9},{"code":"О3","x":1275.0,"y":2675.0},{"code":"Б1","x":3240.0,"y":3490.0},{"code":"Б2","x":3990.0,"y":3490.0},{"code":"Б3","x":4740.1,"y":3490.0},{"code":"Б4","x":5489.9,"y":3490.0},{"code":"Б5","x":6240.0,"y":3490.0},{"code":"Б6","x":2438.9,"y":4407.4},{"code":"Б7","x":2438.9,"y":5157.5},{"code":"Б8","x":2438.9,"y":5907.5},{"code":"Б9","x":2438.9,"y":6657.6},{"code":"Б10","x":2438.9,"y":7407.4},{"code":"1.1","x":2530.1,"y":925.0},{"code":"1.2","x":3730.1,"y":925.0},{"code":"1.3","x":3130.1,"y":1525.0},{"code":"2.1","x":4951.9,"y":925.0},{"code":"2.2","x":6151.9,"y":925.0},{"code":"2.3","x":5551.9,"y":1525.0},{"code":"3.1","x":7774.0,"y":1025.0},{"code":"3.2","x":8974.0,"y":1025.0},{"code":"3.3","x":8374.0,"y":1625.0},{"code":"4.1","x":12290.9,"y":2716.1},{"code":"4.2","x":11598.0,"y":3116.0},{"code":"4.3","x":10905.2,"y":2716.1},{"code":"4.4","x":10905.2,"y":1916.0},{"code":"4.5","x":11598.0,"y":1516.1},{"code":"4.6","x":12290.9,"y":1916.0}],"fence":{"rails":[[8276,3865,8719,3865],[8719,3865,8719,4775],[8719,5675,8719,6280],[8719,6280,9996,6280]],"gate":[8719,4775,8719,5675]},"embeds":[["Пожарные шкафы 4 шт · 1380×1500 · h 700",5322,375,1500,200,"fire",1380,4],["Щиток 330×270 · h = 1560",7712,425,270,150,"panel",330,1],["Пожарная кнопка",629,4000,100,180,"embedMisc",120,1],["Распр. щит 1400",10105,7500,90,450,"embedMisc",1400,1]],"paths":[[[-400,6030],[700,6030],[1264,6030],[1264,4000],[1264,3050],[3500,3050],[6500,3050],[9200,3050]],[[9200,3050],[9200,1800],[10500,1800],[11598,1800]],[[9350,3050],[9350,4700],[9750,5950],[10800,5950],[11600,5950],[11600,4600]],[[9350,4700],[9350,5215],[8400,5215]]],"ceiling_zones":[["Основной зал",0,0,9996,8778,"h5520"],["Правая часть",9996,0,3585,8778,"h3100"]]};
+/* ===== реестр высот ==========================================
+   plan — число стоит на чертеже, поле заблокировано
+   said — вы сказали это в переписке, чертёж молчит
+   open — нет нигде, значение придумано, чтобы объём собрался
+   ============================================================= */
+const H = [
+ {k:'h5520', n:'Потолок, основной зал',          v:5520, src:'plan'},
+ {k:'h3100', n:'Потолок, правая часть',          v:3100, src:'plan'},
+ {k:'fire',  n:'Низ пожарных шкафов',            v:700,  src:'plan'},
+ {k:'panel', n:'Отметка щитка',                  v:1560, src:'plan'},
+
+ {k:'towerLegs', n:'Пивная башня, число ножек',  v:3,    src:'said', int:true},
+ {k:'taps',      n:'Кранов на башне',            v:24,   src:'said', int:true},
+ {k:'tapSide',   n:'Краны с внутренней стороны', v:1,    src:'said', flag:true},
+ {k:'towerOn',   n:'Башня стоит на стойке',      v:1,    src:'said', flag:true},
+
+ {k:'bar',      n:'Г-стойка',                    v:1100, src:'open'},
+ {k:'winbar',   n:'Стойка у окна',               v:1100, src:'open'},
+ {k:'topSlab',  n:'Толщина столешниц',           v:40,   src:'open'},
+ {k:'towerLeg', n:'Ножки башни, высота',          v:150,  src:'open'},
+ {k:'legDia',   n:'Ножки башни, диаметр',         v:170,  src:'open'},
+ {k:'towerBody',n:'Корпус башни',                v:480,  src:'open'},
+ {k:'stoolBar', n:'Табурет барный, сиденье',     v:750,  src:'open'},
+ {k:'table',    n:'Столы 1–3',                   v:750,  src:'open'},
+ {k:'rtable',   n:'Стол 4, круглый',             v:750,  src:'open'},
+ {k:'stoolTbl', n:'Стул у стола, сиденье',       v:450,  src:'open'},
+ {k:'backTbl',  n:'Стул у стола, спинка',        v:880,  src:'open'},
+ {k:'fridge',   n:'Холодильник',                 v:2000, src:'open'},
+ {k:'freezer',  n:'Морозилка',                   v:850,  src:'open'},
+ {k:'worktop',  n:'Столешница и раковина',       v:850,  src:'open'},
+ {k:'oven',     n:'Печь',                        v:500,  src:'open'},
+ {k:'till',     n:'Касса',                       v:300,  src:'open'},
+ {k:'coldroom', n:'Колдрум',                     v:2200, src:'open'},
+ {k:'column',   n:'Колонна',                     v:5520, src:'open'},
+ {k:'shelf',    n:'Полки острова, шаг',          v:420,  src:'open'},
+ {k:'fence',    n:'Заборчик',                    v:1000, src:'open'},
+ {k:'wc',       n:'Унитаз',                      v:400,  src:'open'},
+ {k:'wcsink',   n:'Раковина санузла',            v:850,  src:'open'},
+ {k:'partition',n:'Перегородки санузла и холла', v:3100, src:'open'},
+ {k:'sill',     n:'Окно, низ проёма',            v:800,  src:'open'},
+ {k:'winTop',   n:'Окно, верх проёма',           v:2600, src:'open'},
+ {k:'doorH',    n:'Входное полотно, высота',     v:2100, src:'open'},
+ {k:'embedMisc',n:'Кнопка и распр. щит, отметка',v:1200, src:'open'}
+];
+const hv = {}, hset = {};
+H.forEach(h => { hv[h.k] = h.v; hset[h.k] = (h.src !== 'open'); });
+const ceilOf = x => (x < 9996 ? hv.h5520 : hv.h3100);
+
+/* ===== сцена ===== */
+const S = 0.001, RW = MODEL.room.w, RD = MODEL.room.d;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x22302c);
+scene.fog = new THREE.Fog(0x22302c, 28, 68);
+const cam = new THREE.PerspectiveCamera(42, 1, 0.04, 320);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.getElementById('stage').appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xd8e4dc, 0x2b3a34, 0.9));
+const sun = new THREE.DirectionalLight(0xfff4e2, 0.7); sun.position.set(-7,13,6); scene.add(sun);
+const fil = new THREE.DirectionalLight(0xbcd2e0, 0.3); fil.position.set(9,7,-8); scene.add(fil);
+
+const world = new THREE.Group();
+world.position.set(-RW*S/2, 0, -RD*S/2);
+scene.add(world);
+const G = {};
+['zones','walls','glass','counters','tower','cases','seats','tables','island',
+ 'coldroom','fence','embeds','paths','ceiling'].forEach(k => {
+  G[k] = new THREE.Group(); world.add(G[k]);
+});
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(RW*S, RD*S),
+  new THREE.MeshLambertMaterial({color:0xc6d3ca}));
+floor.rotation.x = -Math.PI/2;
+floor.position.set(RW*S/2, 0, RD*S/2);
+world.add(floor);
+
+/* ===== примитивы ===== */
+const EDGE_OPEN = new THREE.LineBasicMaterial({color:0xe8a23c, transparent:true, opacity:.9});
+const EDGE_SET  = new THREE.LineBasicMaterial({color:0x22302c, transparent:true, opacity:.3});
+const tracked = [], labels = [];
+
+function lam(c){ return new THREE.MeshLambertMaterial({color:new THREE.Color(c)}); }
+
+/* x,y — левый верхний угол в плане; b — низ; h — высота */
+function box(g, x, y, w, d, b, h, colour, key, label, edges){
+  if (h <= 0 || w <= 0 || d <= 0) return null;
+  const geo = new THREE.BoxGeometry(w*S, h*S, d*S);
+  const m = new THREE.Mesh(geo, lam(colour));
+  m.position.set((x+w/2)*S, (b+h/2)*S, (y+d/2)*S);
+  m.userData = {key, label, top:b+h};
+  if (edges !== false){
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), EDGE_SET);
+    m.add(e); m.userData.edges = e;
+  }
+  g.add(m); if (key) tracked.push(m); if (label) labels.push(m);
+  return m;
+}
+function cyl(g, cx, cy, dia, b, h, colour, key, label, seg){
+  if (h <= 0) return null;
+  const geo = new THREE.CylinderGeometry(dia*S/2, dia*S/2, h*S, seg || 24);
+  const m = new THREE.Mesh(geo, lam(colour));
+  m.position.set(cx*S, (b+h/2)*S, cy*S);
+  m.userData = {key, label, top:b+h};
+  g.add(m); if (key) tracked.push(m); if (label) labels.push(m);
+  return m;
+}
+
+/* ===== сборка ===== */
+function build(){
+  Object.values(G).forEach(g => { while (g.children.length) g.remove(g.children[0]); });
+  tracked.length = 0;
+  const TS = hv.topSlab;
+
+  /* --- зоны пола --- */
+  MODEL.zones.forEach(([n,x,y,w,d,c]) => {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(w*S, d*S),
+      new THREE.MeshBasicMaterial({color:new THREE.Color(c), transparent:true, opacity:.55}));
+    p.rotation.x = -Math.PI/2; p.position.set((x+w/2)*S, .004, (y+d/2)*S);
+    G.zones.add(p);
+  });
+
+  /* --- стены и плинтус --- */
+  MODEL.walls.forEach(([n,x,y,w,d,inner]) => {
+    const h   = inner ? hv.partition : ceilOf(x + w/2);
+    const key = inner ? 'partition' : ((x + w/2 < 9996) ? 'h5520' : 'h3100');
+    box(G.walls, x, y, w, d, 0, h, inner ? 0x9cb3a4 : 0x8ea99a, key, null);
+    box(G.walls, x-14, y-14, w+28, d+28, 0, 95, 0x788f80, key, null, false);
+  });
+
+  /* --- окно --- */
+  const W = MODEL.window, wh = Math.max(hv.winTop - hv.sill, 60);
+  const gl = box(G.glass, W.x, W.y, W.w, W.d, hv.sill, wh, 0xbfd7e4, 'winTop', 'Окно');
+  gl.material.transparent = true; gl.material.opacity = .32; gl.userData.glass = true;
+  box(G.glass, W.x, W.y, W.w+22, 70, hv.sill, wh, 0x93a49b, 'winTop', null);
+  box(G.glass, W.x, W.y+W.d-70, W.w+22, 70, hv.sill, wh, 0x93a49b, 'winTop', null);
+  box(G.glass, W.x, W.y, W.w+22, W.d, hv.sill, 85, 0x93a49b, 'sill', null);
+  box(G.glass, W.x, W.y, W.w+22, W.d, hv.winTop-85, 85, 0x93a49b, 'winTop', null);
+  box(G.glass, W.sash_x-26, W.y, 52, W.d, hv.sill, wh, 0xa0857a, 'winTop', null);
+
+  /* --- входное полотно (на чертеже оранжевое) --- */
+  const D = MODEL.door;
+  box(G.glass, D.x, D.y, D.w, D.d, 0, hv.doorH, 0xe8a23c, 'doorH', 'Входное полотно 1880');
+
+  /* --- стойки: цоколь, корпус, столешница со свесом --- */
+  MODEL.counters.forEach(([n,x,y,w,d,key]) => {
+    const top = hv[key];
+    box(G.counters, x+45, y+45, w-90, d-90, 0, 115, 0x8b6c3d, key, null);
+    box(G.counters, x, y, w, d, 115, top-TS-115, 0xc3995d, key, n);
+    box(G.counters, x-25, y-25, w+50, d+50, top-TS, TS, 0xa8813f, key, null);
+  });
+
+  /* --- пивная башня: Г-образный корпус на ножках поверх стойки --- */
+  const T = MODEL.tower, legs = Math.max(1, Math.round(hv.towerLegs));
+  const tBase = hv.bar, tBody = tBase + hv.towerLeg;
+  const dia = Math.max(60, hv.legDia), flange = Math.min(dia + 50, 200);
+  T.legs.slice(0, legs).forEach(([lx, ly]) => {
+    cyl(G.tower, lx, ly, flange, tBase, 24, 0x646e77, 'legDia', null, 24);
+    cyl(G.tower, lx, ly, dia, tBase + 24, Math.max(hv.towerLeg - 48, 20), 0x7c868e,
+        'towerLeg', null, 24);
+    cyl(G.tower, lx, ly, flange, tBody - 24, 24, 0x646e77, 'legDia', null, 24);
+  });
+  T.arms.forEach(([x,y,w,d], i) => {
+    box(G.tower, x, y, w, d, tBody, hv.towerBody, 0x8d9aa2, 'towerBody', i ? null : T.name);
+    box(G.tower, x-18, y-18, w+36, d+36, tBody+hv.towerBody, 28, 0x6f7a82, 'towerBody', null);
+    box(G.tower, x, y, w, d, tBody+hv.towerBody*0.62, 26, 0x6f7a82, 'towerBody', null, false);
+  });
+
+  /* краны: внутренняя грань Г, к бармену; счёт делится между плечами */
+  const A = T.arms[0], B = T.arms[1];
+  const inX = B[0] + B[2], inY = A[1] + A[3];      // внутренний угол Г
+  const runA = A[0] + A[2] - inX, runB = B[1] + B[3] - inY;
+  const nTap = Math.max(0, Math.round(hv.taps));
+  const nA = Math.round(nTap * runA / (runA + runB)), nB = nTap - nA;
+  const near = 150, far = 80;
+  const spot = (n, i, run) => n < 2 ? run/2
+             : near + (run - near - far) * i / (n - 1);
+  for (let i = 0; i < nA; i++) tap(inX + spot(nA, i, runA), inY + 46, tBody);
+  for (let i = 0; i < nB; i++) tap(inX + 46, inY + spot(nB, i, runB), tBody);
+
+  /* --- касса на столешнице --- */
+  MODEL.onCounter.forEach(([n,x,y,w,d,c,key]) => {
+    const b = hv.bar;
+    box(G.counters, x, y, w, d, b, hv[key], c, key, n);
+    box(G.counters, x+70, y+d*0.12, w-140, d*0.5, b+hv[key], 26, 0x2f3d4e, key, null);
+  });
+
+  /* --- линия оборудования: цоколь, корпус, столешница, фасады на север --- */
+  MODEL.cases.forEach(([n,x,y,w,d,c,key,kind]) => {
+    const h = hv[key];
+    if (kind === 'wc'){
+      box(G.cases, x, y+40, 400, d-80, 0, h, c, key, n);
+      box(G.cases, x+400, y+50, w-400, d-100, h*0.45, h*1.25, c, key, null);
+      box(G.cases, x+30, y+60, 360, d-120, h, 60, 0xdfe7ec, key, null);
+      return;
+    }
+    box(G.cases, x+45, y+45, w-90, d-90, 0, 110, 0x7f8a86, key, null);
+    box(G.cases, x, y, w, d, 110, h-TS-110, c, key, n);
+    box(G.cases, x-15, y-15, w+30, d+30, h-TS, TS, 0xb9c2bb, key, null);
+    /* фасады смотрят на север (спиной к стене или к колонне) */
+    const nDoor = Math.max(1, Math.round(w / 700));
+    for (let i = 0; i < nDoor; i++){
+      const dw = w / nDoor;
+      box(G.cases, x + i*dw + 18, y - 22, dw - 36, 26, 150, h-TS-190,
+          kind === 'oven' ? 0x2b3440 : 0xdde4de, key, null);
+      box(G.cases, x + i*dw + dw*0.5 - 90, y - 34, 180, 24, h-TS-260, 26, 0x6d7a72, key, null);
+    }
+    if (kind === 'sink'){
+      box(G.cases, x+90, y+90, w-180, d-180, h-150, 150, 0x7f9c98, key, null);
+      cyl(G.cases, x+w*0.5, y+110, 44, h, 240, 0x8e9a93, key, null, 14);
+      box(G.cases, x+w*0.5-22, y+110, 44, 200, h+200, 40, 0x8e9a93, key, null);
+    }
+  });
+
+  /* --- колонна --- */
+  const C = MODEL.column;
+  box(G.cases, C[1], C[2], C[3], C[4], 0, hv.column, 0xb9c4bd, 'column', C[0]);
+  box(G.cases, C[1]-30, C[2]-30, C[3]+60, C[4]+60, 0, 160, 0xa6b3ab, 'column', null);
+
+  /* --- остров до потолка: боковины, полки, стойки --- */
+  const I = MODEL.island, iH = ceilOf(I[1] + I[3]/2);
+  box(G.island, I[1], I[2], 60, I[4], 0, iH, 0xb99a62, 'h5520', I[0]);
+  box(G.island, I[1]+I[3]-60, I[2], 60, I[4], 0, iH, 0xb99a62, 'h5520', null);
+  box(G.island, I[1], I[2], I[3], I[4], 0, 140, 0x9c7f4c, 'h5520', null);
+  const sh = Math.max(180, hv.shelf);
+  for (let z = 140 + sh; z < iH - 80; z += sh)
+    box(G.island, I[1]+60, I[2]+30, I[3]-120, I[4]-60, z, 30, 0xcbb182, 'shelf', null);
+  for (let k = 1; k < Math.round(I[3]/800); k++)
+    box(G.island, I[1] + k*(I[3]/Math.round(I[3]/800)) - 20, I[2]+30, 40, I[4]-60,
+        140, iH-220, 0xb99a62, 'shelf', null, false);
+
+  /* --- колдрум: панельная оболочка --- */
+  const K = MODEL.coldroom, kh = hv.coldroom, t = 100;
+  box(G.coldroom, K[1], K[2], K[3], t, 0, kh, 0xd7e6ec, 'coldroom', K[0]);
+  box(G.coldroom, K[1], K[2]+K[4]-t, K[3], t, 0, kh, 0xd7e6ec, 'coldroom', null);
+  box(G.coldroom, K[1], K[2]+t, t, K[4]-2*t, 0, kh, 0xd7e6ec, 'coldroom', null);
+  box(G.coldroom, K[1]+K[3]-t, K[2]+t, t, K[4]-2*t, 0, kh, 0xd7e6ec, 'coldroom', null);
+  box(G.coldroom, K[1]-30, K[2]-30, K[3]+60, K[4]+60, kh, 90, 0xc2d5dc, 'coldroom', null);
+
+  /* --- столы и круглый стол --- */
+  MODEL.tables.forEach(([n,x,y,w,d]) => {
+    const h = hv.table;
+    box(G.tables, x+w/2-225, y+d/2-225, 450, 450, 0, 28, 0x9c8a63, 'table', null);
+    box(G.tables, x+w/2-55,  y+d/2-55,  110, 110, 28, h-TS-28, 0xa8813f, 'table', null);
+    box(G.tables, x, y, w, d, h-TS, TS, 0xd5c396, 'table', n);
+  });
+  const R = MODEL.round_table;
+  cyl(G.tables, R.cx, R.cy, 600, 0, 30, 0x9c8a63, 'rtable', null, 24);
+  cyl(G.tables, R.cx, R.cy, 130, 30, hv.rtable-TS-30, 0xa8813f, 'rtable', null, 20);
+  cyl(G.tables, R.cx, R.cy, R.d, hv.rtable-TS, TS, 0xd5c396, 'rtable', R.name, 40);
+
+  /* --- места --- */
+  const tc = MODEL.tables.map(([n,x,y,w,d]) => [x+w/2, y+d/2]);
+  tc.push([MODEL.round_table.cx, MODEL.round_table.cy]);
+  MODEL.seats.forEach(s => {
+    if (/^[ОБ]/.test(s.code)) { stool(s.x, s.y, s.code); return; }
+    const t = tc[parseInt(s.code[0], 10) - 1] || [s.x, s.y + 600];
+    chair(s.x, s.y, t[0], t[1], s.code);
+  });
+
+  /* --- заборчик и калитка --- */
+  MODEL.fence.rails.forEach(([x1,y1,x2,y2], i) => {
+    const L = Math.hypot(x2-x1, y2-y1), fh = hv.fence;
+    const horiz = Math.abs(x2-x1) > Math.abs(y2-y1);
+    const x = Math.min(x1,x2), y = Math.min(y1,y2);
+    if (horiz){
+      box(G.fence, x, y-22, L, 44, fh-90, 75, 0x74886f, 'fence', i ? null : 'Заборчик');
+      for (let p = 0; p <= L - 20; p += 320)
+        box(G.fence, x+p-19, y-19, 38, 38, 0, fh-90, 0x87a181, 'fence', null, false);
+    } else {
+      box(G.fence, x-22, y, 44, L, fh-90, 75, 0x74886f, 'fence', i ? null : 'Заборчик');
+      for (let p = 0; p <= L - 20; p += 320)
+        box(G.fence, x-19, y+p-19, 38, 38, 0, fh-90, 0x87a181, 'fence', null, false);
+    }
+  });
+  const gt = MODEL.fence.gate;
+  const gp = new THREE.Mesh(new THREE.PlaneGeometry(320*S, Math.abs(gt[3]-gt[1])*S),
+    new THREE.MeshBasicMaterial({color:0x3d8fd1, transparent:true, opacity:.5}));
+  gp.rotation.x = -Math.PI/2;
+  gp.position.set(gt[0]*S, .02, (gt[1]+gt[3])/2*S);
+  gp.userData = {label:'Калитка 900 — свободный проём', top:0};
+  G.fence.add(gp); labels.push(gp);
+
+  /* --- закладные --- */
+  MODEL.embeds.forEach(([n,x,y,w,d,key,hh,cnt]) => {
+    const base = key === 'fire' ? hv.fire : (key === 'panel' ? hv.panel : hv.embedMisc);
+    for (let i = 0; i < cnt; i++){
+      const dw = w / cnt;
+      box(G.embeds, x + i*dw + 10, y, dw - 20, d, base, hh, 0xc0563f, key, i ? null : n);
+    }
+  });
+
+  /* --- проверенные пути --- */
+  MODEL.paths.forEach(pts => {
+    const g = new THREE.BufferGeometry().setFromPoints(
+      pts.map(p => new THREE.Vector3(p[0]*S, .014, p[1]*S)));
+    G.paths.add(new THREE.Line(g, new THREE.LineBasicMaterial({color:0x3d8fd1})));
+  });
+
+  /* --- потолки --- */
+  MODEL.ceiling_zones.forEach(([n,x,y,w,d,key]) => {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(w*S, d*S),
+      new THREE.MeshLambertMaterial({color:0xdfe6e0, transparent:true, opacity:.3,
+                                     side:THREE.DoubleSide}));
+    p.rotation.x = Math.PI/2; p.position.set((x+w/2)*S, hv[key]*S, (y+d/2)*S);
+    G.ceiling.add(p);
+  });
+
+  applyProvenance();
+}
+
+/* --- пивной кран: излив, корпус, ручка --- */
+function tap(x, y, base){
+  cyl(G.tower, x, y, 28, base - 135, 135, 0x59636a, 'taps', null, 10);
+  cyl(G.tower, x, y, 46, base, hv.towerBody * 0.32, 0x848f96, 'taps', null, 10);
+  cyl(G.tower, x, y, 20, base + hv.towerBody * 0.32, 95, 0x3c444a, 'taps', null, 8);
+}
+
+/* --- барный табурет --- */
+function stool(cx, cy, code){
+  const h = hv.stoolBar;
+  cyl(G.seats, cx, cy, 400, 0, 28, 0x77837c, 'stoolBar', null, 20);
+  cyl(G.seats, cx, cy, 88, 28, Math.max(h-88, 20), 0x8d978f, 'stoolBar', null, 14);
+  const t = new THREE.Mesh(new THREE.TorusGeometry(172*S, 13*S, 8, 26), lam(0x8d978f));
+  t.rotation.x = Math.PI/2;
+  t.position.set(cx*S, h*0.28*S, cy*S);
+  t.userData = {key:'stoolBar'};
+  G.seats.add(t); tracked.push(t);
+  cyl(G.seats, cx, cy, 450, h-60, 60, 0x7f9b8c, 'stoolBar', 'Место ' + code, 32);
+}
+
+/* --- стул у стола, развёрнут спинкой от стола --- */
+function chair(cx, cy, tx, ty, code){
+  const g = new THREE.Group();
+  g.position.set(cx*S, 0, cy*S);
+  g.rotation.y = Math.atan2(cx - tx, cy - ty);
+  const h = hv.stoolTbl, bh = Math.max(hv.backTbl, h + 60);
+  const put = (w, hh, d, lx, ly, lz, c, label) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w*S, hh*S, d*S), lam(c));
+    m.position.set(lx*S, ly*S, lz*S);
+    m.userData = {key:'stoolTbl', label, top:ly + hh/2};
+    g.add(m); tracked.push(m); if (label) labels.push(m);
+    return m;
+  };
+  [[-186,-186],[186,-186],[-186,186],[186,186]].forEach(([lx,lz]) =>
+    put(38, h-50, 38, lx, (h-50)/2, lz, 0x8d978f));
+  put(450, 50, 450, 0, h-25, 0, 0xa9b4ad, 'Место ' + code);
+  put(430, bh-h, 46, 0, h + (bh-h)/2, 202, 0x9aa79f);
+  G.seats.add(g);
+}
+
+/* --- провенанс: непросчитанное остаётся прозрачным --- */
+function applyProvenance(){
+  tracked.forEach(m => {
+    const k = m.userData.key; if (!k) return;
+    const open = !hset[k];
+    if (m.userData.glass){ m.material.transparent = true; m.material.opacity = .32; }
+    else { m.material.transparent = open; m.material.opacity = open ? .5 : 1; }
+    if (m.userData.edges) m.userData.edges.material = open ? EDGE_OPEN : EDGE_SET;
+  });
+}
+
+/* ===== панель высот ===== */
+const ledger = document.createElement('aside');
+ledger.id = 'ledger';
+const nOpen = H.filter(h => h.src === 'open').length;
+ledger.innerHTML = `
+ <div class="head">
+   <h1>БАР 05 — объём по чертежу v18</h1>
+   <div class="sub">План снят с чертежа: 13581 × 8778 мм, 28 мест.
+   Вертикаль чертёж задаёт только в четырёх местах.</div>
+ </div>
+ <div class="scroll">
+   <div class="warn">
+     <b>${nOpen} высот на чертеже нет.</b> Эти объёмы полупрозрачные,
+     с оранжевым контуром. Введите своё число — объём станет плотным.
+     Значения в оранжевых полях сейчас просто заглушки, не замер.
+   </div>
+   <div class="ctrls" id="ctrls"></div>
+   <div class="sect"><h2>С чертежа</h2><p>Заблокировано.</p></div><div id="rPlan"></div>
+   <div class="sect"><h2>С ваших слов</h2><p>Пивная башня: сказано в переписке, на плане этого нет.</p></div><div id="rSaid"></div>
+   <div class="sect"><h2>Задаёте вы</h2><p>Пока не тронуты — контур оранжевый.</p></div><div id="rOpen"></div>
+   <div class="warn" style="border-color:#7e9186;background:rgba(137,169,150,.08);color:#a9b6ad">
+     Что я решил сам, потому что чертёж молчит: ступень потолка 5520 → 3100
+     проведена по перегородке x = 9996; подпись пожарных шкафов
+     «1380 × 1500 · h 700» прочитана как 1500 в ширину и 1380 в высоту;
+     фасады оборудования развёрнуты на север, спиной к стене и колонне.
+   </div>
+ </div>`;
+document.body.appendChild(ledger);
+
+function rowFor(h){
+  const r = document.createElement('div');
+  const cls = h.src === 'plan' ? 'known' : (h.src === 'said' ? 'said' : 'open');
+  r.className = 'row' + (h.src === 'open' ? ' open' : (h.src === 'said' ? ' said' : ''));
+  r.innerHTML = `<span class="mark ${cls}"></span><span class="nm">${h.n}</span>
+    <span class="val"><input type="number" step="${h.int ? 1 : 10}" min="0" max="8000"
+      value="${h.v}" ${h.src === 'plan' || h.flag ? 'disabled' : ''}
+      aria-label="${h.n}"><span class="u">${h.int ? 'шт' : (h.flag ? 'да' : 'мм')}</span></span>`;
+  const inp = r.querySelector('input');
+  inp.addEventListener('input', () => {
+    const n = parseFloat(inp.value);
+    if (!isFinite(n) || n < 0) return;
+    hv[h.k] = n; hset[h.k] = true;
+    if (h.src === 'open'){ r.querySelector('.mark').className = 'mark set'; r.classList.remove('open'); }
+    build(); updateHud();
+  });
+  return r;
+}
+H.forEach(h => document.getElementById(
+  h.src === 'plan' ? 'rPlan' : (h.src === 'said' ? 'rSaid' : 'rOpen')).appendChild(rowFor(h)));
+
+/* ===== слои и виды ===== */
+const VIS = {walls:true, ceiling:false, zones:true, paths:true,
+             seats:true, fence:true, embeds:true, labels:false};
+[['walls','Стены'],['ceiling','Потолок'],['zones','Зоны'],['paths','Пути'],
+ ['seats','Места'],['fence','Заборчик'],['embeds','Закладные'],['labels','Подписи']]
+.forEach(([k, lbl]) => {
+  const b = document.createElement('button');
+  b.textContent = lbl; b.className = VIS[k] ? 'on' : '';
+  b.onclick = () => { VIS[k] = !VIS[k]; b.className = VIS[k] ? 'on' : ''; applyVis(); };
+  document.getElementById('ctrls').appendChild(b);
+});
+['План','Изометрия','От входа','За стойкой'].forEach((lbl, i) => {
+  const b = document.createElement('button');
+  b.textContent = lbl; b.onclick = () => view(i);
+  document.getElementById('ctrls').appendChild(b);
+});
+/* кнопка скачивания — только когда страница отдаётся с сервера */
+if (location.protocol === 'http:' || location.protocol === 'https:'){
+  const dl = document.createElement('a');
+  dl.href = 'BAR05_v18.glb';
+  dl.setAttribute('download', 'BAR05_v18.glb');
+  dl.className = 'dl';
+  dl.textContent = 'Скачать GLB';
+  document.getElementById('ctrls').appendChild(dl);
+}
+
+function applyVis(){
+  G.walls.visible = G.glass.visible = VIS.walls;
+  G.ceiling.visible = VIS.ceiling;
+  G.zones.visible = VIS.zones;
+  G.paths.visible = VIS.paths;
+  G.seats.visible = VIS.seats;
+  G.fence.visible = VIS.fence;
+  G.embeds.visible = VIS.embeds;
+  document.getElementById('tags').style.display = VIS.labels ? 'block' : 'none';
+}
+const tg = document.getElementById('toggle');
+tg.onclick = () => document.body.classList.toggle('open');
+if (innerWidth > 760) document.body.classList.add('open');
+
+/* ===== орбита ===== */
+let dist = 22, yaw = -0.62, pitch = 0.80;
+const target = new THREE.Vector3(0, 1.1, 0);
+function place(){
+  cam.position.set(target.x + dist*Math.sin(pitch)*Math.sin(yaw),
+                   target.y + dist*Math.cos(pitch),
+                   target.z + dist*Math.sin(pitch)*Math.cos(yaw));
+  cam.lookAt(target);
+}
+function fitDist(pad){
+  const k = 2*Math.tan(cam.fov*Math.PI/360);
+  return Math.max((RW*S*pad)/(k*cam.aspect), (RD*S*pad)/k);
+}
+function view(i){
+  if (i===0){ yaw=0; pitch=0.03; dist=fitDist(1.1); target.set(0,0,0); }
+  if (i===1){ yaw=-0.62; pitch=0.80; dist=fitDist(1.0); target.set(0,1.1,0); }
+  if (i===2){ yaw=1.42; pitch=1.24; dist=fitDist(0.40); target.set(-2.4,1.3,1.0); }
+  if (i===3){ yaw=-2.25; pitch=1.30; dist=fitDist(0.24); target.set(-2.4,1.4,0.5); }
+  place();
+}
+const el = renderer.domElement;
+let drag = null, pinch = 0;
+el.addEventListener('pointerdown', e => {
+  el.setPointerCapture(e.pointerId);
+  drag = {x:e.clientX, y:e.clientY, pan:(e.button === 2 || e.shiftKey)};
+});
+el.addEventListener('pointermove', e => {
+  if (!drag || pinch) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan){
+    const r = dist * 0.0016;
+    target.x -= (dx*Math.cos(yaw) - dy*Math.sin(yaw)*Math.cos(pitch)) * r;
+    target.z += (dx*Math.sin(yaw) + dy*Math.cos(yaw)*Math.cos(pitch)) * r;
+  } else {
+    yaw -= dx * 0.006;
+    pitch = Math.max(0.03, Math.min(1.53, pitch - dy * 0.006));
+  }
+  place();
+});
+addEventListener('pointerup', () => { drag = null; });
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('wheel', e => {
+  e.preventDefault();
+  dist = Math.max(1.4, Math.min(80, dist * (1 + Math.sign(e.deltaY) * 0.11)));
+  place();
+}, {passive:false});
+el.addEventListener('touchmove', e => {
+  if (e.touches.length !== 2) return;
+  const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                       e.touches[0].clientY - e.touches[1].clientY);
+  if (pinch) dist = Math.max(1.4, Math.min(80, dist * pinch / d));
+  pinch = d; place();
+}, {passive:true});
+el.addEventListener('touchend', () => { pinch = 0; });
+
+/* ===== подписи ===== */
+const tagBox = document.getElementById('tags');
+let pool = [];
+const tmpV = new THREE.Vector3();
+function drawTags(){
+  if (!VIS.labels) return;
+  while (pool.length < labels.length){
+    const d = document.createElement('div'); d.className = 'tag';
+    tagBox.appendChild(d); pool.push(d);
+  }
+  pool.forEach((d, i) => {
+    const m = labels[i];
+    if (!m || !m.parent || !m.visible){ d.style.display = 'none'; return; }
+    let p = m; let hid = false;
+    while (p){ if (!p.visible){ hid = true; break; } p = p.parent; }
+    if (hid){ d.style.display = 'none'; return; }
+    m.getWorldPosition(tmpV);
+    tmpV.y += 0.09;
+    tmpV.project(cam);
+    if (tmpV.z > 1 || Math.abs(tmpV.x) > 1.12 || Math.abs(tmpV.y) > 1.12){
+      d.style.display = 'none'; return;
+    }
+    d.style.display = 'block';
+    d.className = 'tag' + (m.userData.label.indexOf('Место') === 0 ? ' seat' : '');
+    d.textContent = m.userData.label;
+    d.style.left = ((tmpV.x * 0.5 + 0.5) * innerWidth) + 'px';
+    d.style.top  = ((-tmpV.y * 0.5 + 0.5) * innerHeight) + 'px';
+  });
+}
+
+/* ===== счётчик ===== */
+function updateHud(){
+  const open = H.filter(h => h.src === 'open' && !hset[h.k]).length;
+  document.getElementById('hud').innerHTML =
+    `Помещение <b>13581 × 8778</b> мм · 28 мест<br>` +
+    `масштаб чертежа <b>15,5</b> мм на единицу<br>` +
+    (open ? `<b style="color:#e8a23c">${open}</b> высот ещё не задано`
+          : `все высоты заданы`);
+}
+
+/* ===== цикл ===== */
+function resize(){
+  cam.aspect = innerWidth / innerHeight;
+  cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+addEventListener('resize', () => { resize(); place(); });
+
+resize(); build(); applyVis(); view(1); updateHud();
+document.getElementById('load').remove();
+(function loop(){
+  requestAnimationFrame(loop);
+  renderer.render(scene, cam);
+  drawTags();
+})();
+</script>
+</body>
+</html>
